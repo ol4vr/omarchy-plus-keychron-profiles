@@ -14,7 +14,7 @@ const thirdParty = fs.readFileSync(path.join(root, "THIRD_PARTY.md"), "utf8");
 
 test("manifest declares a singleton owned Indicators clone", () => {
   assert.equal(manifest.id, "io.github.ol4vr.keychron-profiles");
-  assert.equal(manifest.version, "0.1.0");
+  assert.equal(manifest.version, "0.1.1");
   assert.deepEqual(manifest.kinds, ["service", "bar-widget"]);
   assert.equal(manifest.entryPoints.service, "Service.qml");
   assert.equal(manifest.entryPoints.barWidget, "Indicators.qml");

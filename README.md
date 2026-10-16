@@ -14,7 +14,7 @@ to the existing center Indicators flyout:
 There is no profile panel, popup, submenu, app-triggered switching, or separate
 top-bar widget.
 
-The permanent plugin ID is `io.github.ol4vr.keychron-profiles`. Version 0.1.0
+The permanent plugin ID is `io.github.ol4vr.keychron-profiles`. Version 0.1.1
 is intentionally limited to wired K10 HE ANSI (`3434:0ea0`) and ISO
 (`3434:0ea1`). An exact serial can be configured in the widget settings when
 more than one supported keyboard may be present. Serial values belong to the
@@ -77,11 +77,17 @@ checkout or an unrecognized directory:
 ./scripts/dev-remove
 ```
 
-Deployment validates first, copies only `runtime-files.txt`, and restarts the
-existing Omarchy shell. Enabling this plugin replaces the stock
+Deployment validates first, copies only `runtime-files.txt`, requests the
+supported shell plugin rescan, and fails unless the plugin appears in the
+authoritative plugin list within the bounded registration check. It never
+restarts the shell. Enabling this plugin replaces the stock
 `omarchy.indicators` widget in place through Omarchy's clone lifecycle, keeping
 the center placement and inherited settings. Disabling it restores the stock
 widget. Neither operation selects a keyboard profile.
+
+A full shell-restart acceptance test remains a separate, explicitly authorized
+live operation. When RAM Tetris is active, that test must use the OpenRGB
+lifecycle's reviewed handoff procedure; `dev-deploy` does not initiate it.
 
 Publication, central `config/plugins.json` pinning, and final acceptance remain
 owned by the central Omarchy+ repository.
@@ -126,7 +132,7 @@ Hugin's existing packaged OpenRGB udev rules grant the logged-in seat user
 `uaccess` to the K10 HE raw HID nodes. The plugin never elevates or changes
 permissions. A missing ACL is reported as unavailable.
 
-Version 0.1.0 supports only the wired K10 HE. It does not support 2.4 GHz,
+Version 0.1.1 supports only the wired K10 HE. It does not support 2.4 GHz,
 Bluetooth, Q1 HE, or Q1 HE 8K. Do not
 run Keychron Launcher/VIA concurrently with selection; hidraw does not provide
 exclusive protocol ownership across unrelated applications.

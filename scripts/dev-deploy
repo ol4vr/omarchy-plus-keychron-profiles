@@ -9,7 +9,25 @@ plugin_root=${XDG_CONFIG_HOME:-"$HOME/.config"}/omarchy/plugins
 target="$plugin_root/$plugin_id"
 runtime_list="$repo/runtime-files.txt"
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+readonly registration_attempts=100
+readonly registration_delay=0.1
 mode=${1:-deploy}
+
+plugin_is_registered() {
+  omarchy plugin list --json 2>/dev/null |
+    jq -e --arg id "$plugin_id" 'any(.[]; .id == $id)' >/dev/null
+}
+
+wait_for_plugin_registration() {
+  local attempt
+
+  for ((attempt = 1; attempt <= registration_attempts; attempt++)); do
+    plugin_is_registered && return 0
+    sleep "$registration_delay"
+  done
+
+  return 1
+}
 
 case "$mode" in
   deploy|--check) ;;
@@ -80,8 +98,12 @@ if ! mv -- "$stage" "$target"; then
 fi
 stage=
 [[ -z "$backup" || ! -d "$backup" ]] || rm -rf -- "$backup"
-omarchy restart shell
+omarchy-shell shell rescanPlugins >/dev/null
+if ! wait_for_plugin_registration; then
+  echo "Keychron Profiles registration did not become ready after plugin rescan: $plugin_id" >&2
+  exit 1
+fi
 
-echo "Keychron Profiles development copy deployed; no profile was selected."
+echo "Keychron Profiles development copy deployed and registered; no profile was selected."
 echo "Enable manually: omarchy plugin enable $plugin_id"
 echo "Remove: $repo/scripts/dev-remove"

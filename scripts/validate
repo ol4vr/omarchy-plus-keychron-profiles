@@ -22,8 +22,8 @@ manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
 
 if manifest.get("schemaVersion") != 1 or manifest.get("id") != expected_id:
     raise RuntimeError("manifest identity does not match Keychron Profiles")
-if manifest.get("version") != "0.1.0":
-    raise RuntimeError("manifest version must be 0.1.0")
+if manifest.get("version") != "0.1.1":
+    raise RuntimeError("manifest version must be 0.1.1")
 if manifest.get("kinds") != ["service", "bar-widget"]:
     raise RuntimeError("Keychron Profiles must declare service and bar-widget")
 if manifest.get("entryPoints") != {"service": "Service.qml", "barWidget": "Indicators.qml"}:

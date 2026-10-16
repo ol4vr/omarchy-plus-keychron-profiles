@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ol4vr.keychron-profiles",
   "name": "Keychron Profiles",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "ol4vr",
   "license": "MIT",
   "description": "Hardware-backed Gamepad Mode toggle for Hugin's wired Keychron K10 HE.",
