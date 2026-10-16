@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+expected_repo_name=omarchy-plus-keychron-profiles
+plugin_id=io.github.ol4vr.keychron-profiles
+plugin_root=${XDG_CONFIG_HOME:-"$HOME/.config"}/omarchy/plugins
+target="$plugin_root/$plugin_id"
+runtime_list="$repo/runtime-files.txt"
+omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+mode=${1:-deploy}
+
+case "$mode" in
+  deploy|--check) ;;
+  *) echo "Usage: $0 [--check]" >&2; exit 2 ;;
+esac
+
+[[ $(basename -- "$repo") == "$expected_repo_name" && -d "$repo/.git" ]] || {
+  echo "Refusing unexpected source repository: $repo" >&2; exit 1;
+}
+branch=$(git -C "$repo" branch --show-current)
+if [[ -z "$branch" || "$branch" == main || "$branch" == master ]]; then
+  echo "Refusing deployment from non-development branch: ${branch:-detached}" >&2
+  exit 1
+fi
+
+"$repo/scripts/validate"
+marker=$(mktemp /tmp/omarchy-plus-keychron-profiles-marker.XXXXXX)
+stage=
+cleanup() {
+  [[ -z "$stage" || ! -d "$stage" ]] || rm -rf -- "$stage"
+  rm -f -- "$marker"
+}
+trap cleanup EXIT
+printf '%s\n' 'schema=1' "id=$plugin_id" "source=$repo" > "$marker"
+
+if [[ -e "$target" ]]; then
+  [[ -d "$target" && ! -e "$target/.git" && -f "$target/.omarchy-plus-development" ]] || {
+    echo "Refusing unrecognized or Git-managed plugin target: $target" >&2; exit 1;
+  }
+  cmp -s "$marker" "$target/.omarchy-plus-development" || {
+    echo "Refusing development directory with a foreign marker: $target" >&2; exit 1;
+  }
+fi
+
+if [[ "$mode" == --check ]]; then
+  stage=$(mktemp -d /tmp/omarchy-plus-keychron-profiles-stage.XXXXXX)
+else
+  mkdir -p "$plugin_root"
+  stage=$(mktemp -d "$plugin_root/.keychron-profiles-stage.XXXXXX")
+fi
+
+while IFS= read -r relative; do
+  [[ -n "$relative" ]] || continue
+  permissions=0644
+  [[ "$relative" == keychron-profiles ]] && permissions=0755
+  install -D -m "$permissions" "$repo/$relative" "$stage/$relative"
+done < "$runtime_list"
+install -m 0644 "$marker" "$stage/.omarchy-plus-development"
+omarchy plugin validate "$stage"
+qmllint -I "$omarchy_path/shell" "$stage/Service.qml" "$stage/indicators/GamepadMode.qml"
+
+if [[ "$mode" == --check ]]; then
+  echo "Keychron Profiles development deployment check: PASS"
+  echo "No live configuration or hardware changed."
+  exit 0
+fi
+
+backup=
+if [[ -d "$target" ]]; then
+  backup="$plugin_root/.keychron-profiles-previous.$$"
+  [[ ! -e "$backup" ]] || { echo "Refusing unexpected backup path: $backup" >&2; exit 1; }
+  mv -- "$target" "$backup"
+fi
+if ! mv -- "$stage" "$target"; then
+  [[ -z "$backup" || ! -d "$backup" ]] || mv -- "$backup" "$target"
+  echo "Development deployment failed; previous copy restored." >&2
+  exit 1
+fi
+stage=
+[[ -z "$backup" || ! -d "$backup" ]] || rm -rf -- "$backup"
+omarchy restart shell
+
+echo "Keychron Profiles development copy deployed; no profile was selected."
+echo "Enable manually: omarchy plugin enable $plugin_id"
+echo "Remove: $repo/scripts/dev-remove"

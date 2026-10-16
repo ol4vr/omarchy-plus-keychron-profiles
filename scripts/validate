@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+expected_id=io.github.ol4vr.keychron-profiles
+runtime_list="$repo/runtime-files.txt"
+omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+
+python3 - "$repo" "$expected_id" "$runtime_list" <<'PY'
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path, PurePosixPath
+
+root = Path(sys.argv[1]).resolve()
+expected_id = sys.argv[2]
+runtime_list = Path(sys.argv[3])
+manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+
+if manifest.get("schemaVersion") != 1 or manifest.get("id") != expected_id:
+    raise RuntimeError("manifest identity does not match Keychron Profiles")
+if manifest.get("version") != "0.1.0":
+    raise RuntimeError("manifest version must be 0.1.0")
+if manifest.get("kinds") != ["service", "bar-widget"]:
+    raise RuntimeError("Keychron Profiles must declare service and bar-widget")
+if manifest.get("entryPoints") != {"service": "Service.qml", "barWidget": "Indicators.qml"}:
+    raise RuntimeError("unexpected entry points")
+bar = manifest.get("barWidget", {})
+if bar.get("allowMultiple") is not False or bar.get("defaultSection") != "center":
+    raise RuntimeError("bar-widget singleton or placement contract changed")
+if manifest.get("omarchy", {}).get("clonedFrom") != "omarchy.indicators":
+    raise RuntimeError("Indicators clone contract is missing")
+
+runtime_paths: list[str] = []
+for line in runtime_list.read_text(encoding="utf-8").splitlines():
+    value = line.strip()
+    if not value:
+        continue
+    candidate = PurePosixPath(value)
+    if candidate.is_absolute() or ".." in candidate.parts or value in runtime_paths:
+        raise RuntimeError(f"unsafe or duplicate runtime path: {value}")
+    path = root / value
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError(f"runtime file is missing or unsafe: {value}")
+    runtime_paths.append(value)
+
+required = (
+    "manifest.json", "Service.qml", "Indicators.qml", "Model.js",
+    "indicators/GamepadMode.qml", "keychron-profiles", "README.md",
+    "THIRD_PARTY.md", "LICENSE",
+)
+for value in required:
+    if value not in runtime_paths:
+        raise RuntimeError(f"required runtime file is not allowlisted: {value}")
+
+if (root / "Indicators.qml").read_text(encoding="utf-8").count(
+    'moduleName: "omarchy.indicators"'
+) != 1:
+    raise RuntimeError("Indicators.qml must preserve the stock IPC module name")
+for removed in ("BarWidget.qml", "Panel.qml"):
+    if (root / removed).exists():
+        raise RuntimeError(f"obsolete standalone UI remains: {removed}")
+
+for path in root.rglob("*"):
+    relative = path.relative_to(root)
+    if relative.parts and relative.parts[0] == ".git":
+        continue
+    if path.is_symlink():
+        raise RuntimeError(f"repository payload contains a symlink: {relative}")
+    if not path.is_file() or "__pycache__" in relative.parts:
+        continue
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        continue
+    if re.search(r"/home/[A-Za-z0-9._-]+", text):
+        raise RuntimeError(f"public source contains an absolute home path: {relative}")
+    if re.search(r"\b[0-9]{20,}\b", text):
+        raise RuntimeError(f"public source contains a possible hardware serial: {relative}")
+    private_markers = ("Ror" + "vik", "@pm" + ".me")
+    if any(marker in text for marker in private_markers):
+        raise RuntimeError(f"public source contains a personal identifier: {relative}")
+PY
+
+omarchy plugin validate "$repo"
+# Hugin's qmllint 1.0 returns 255 for the unmodified stock Indicators.qml and
+# first-party optional-chaining indicator files. Lint only authored QML here;
+# the complete clone is checked by Omarchy's manifest validator and live load.
+qmllint -I "$omarchy_path/shell" "$repo/Service.qml" "$repo/indicators/GamepadMode.qml"
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$repo/tests" -p 'test_*.py'
+node "$repo/tests/model-test.js"
+node --test "$repo/tests/ui-contract.test.js"
+python3 - "$repo/keychron-profiles" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+compile(path.read_text(encoding="utf-8"), str(path), "exec")
+PY
+bash -n "$repo/scripts/validate" "$repo/scripts/dev-deploy" "$repo/scripts/dev-remove"
+
+rg -q 'GET_PROFILES_INFO = 0x10' "$repo/keychron-profiles"
+rg -q 'SELECT_PROFILE = 0x11' "$repo/keychron-profiles"
+rg -q 'SELECTABLE_PROFILES = \{"default": 0, "gamepad": 2\}' "$repo/keychron-profiles"
+rg -q 'interval: 2000' "$repo/Service.qml"
+rg -q 'serviceFor\("io.github.ol4vr.keychron-profiles"\)' "$repo/indicators/GamepadMode.qml"
+if rg -q 'Process \{|Timer \{' "$repo/indicators/GamepadMode.qml"; then
+  echo 'GamepadMode.qml must not own helper processes or the polling timer' >&2
+  exit 1
+fi
+
+if git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$repo" diff --check
+fi
+
+echo "Keychron Profiles validation: PASS"

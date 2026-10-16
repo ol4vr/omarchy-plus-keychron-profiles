@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""Minimal wired Keychron K10 HE profile reader and selector.
+
+The only HID application commands this helper can emit are
+AMC_GET_PROFILES_INFO (0x10) and AMC_SELECT_PROFILE (0x11). Selection is
+further restricted to profile indices 0 (Default) and 2 (Gamepad).
+"""
+
+from __future__ import annotations
+
+import argparse
+import errno
+import fcntl
+import json
+import os
+import re
+import select
+import stat
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+SCHEMA = 1
+REPORT_SIZE = 32
+TOP_COMMAND = 0xA9
+GET_PROFILES_INFO = 0x10
+SELECT_PROFILE = 0x11
+PROFILE_COUNT = 3
+PROFILE_NAMES = {0: "Default", 1: "Profile 2", 2: "Gamepad"}
+SELECTABLE_PROFILES = {"default": 0, "gamepad": 2}
+SUPPORTED_IDS = {("3434", "0EA0"), ("3434", "0EA1")}
+EXPECTED_DESCRIPTOR = bytes.fromhex(
+    "06 60 ff 09 61 a1 01 09 62 15 00 26 ff 00 95 20 75 08 81 02 "
+    "09 63 15 00 26 ff 00 95 20 75 08 91 02 c0"
+)
+SERIAL_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+COMMAND_TIMEOUT = 0.8
+LOCK_TIMEOUT = 1.0
+
+
+class HelperError(Exception):
+    def __init__(self, state: str, message: str, exit_code: int = 1):
+        super().__init__(message)
+        self.state = state
+        self.message = message
+        self.exit_code = exit_code
+
+
+class ProtocolTimeout(HelperError):
+    def __init__(self, message: str):
+        super().__init__("timeout", message)
+
+
+@dataclass(frozen=True)
+class Candidate:
+    path: Path
+    serial: str
+    product: str
+    vid: str
+    pid: str
+    physical_path: str
+
+
+def parse_uevent(text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            fields[key] = value
+    return fields
+
+
+def discover_device(
+    serial: str = "",
+    sysfs_root: Path = Path("/sys/class/hidraw"),
+    dev_root: Path = Path("/dev"),
+) -> Candidate:
+    supported_nodes = 0
+    candidates: list[Candidate] = []
+
+    try:
+        entries = sorted(sysfs_root.glob("hidraw*"))
+    except OSError as error:
+        raise HelperError("disconnected", f"Cannot inspect HID devices: {error}") from error
+
+    for entry in entries:
+        try:
+            fields = parse_uevent((entry / "device" / "uevent").read_text(encoding="utf-8"))
+            hid_id = fields.get("HID_ID", "").split(":")
+            if len(hid_id) != 3 or hid_id[0].upper() != "0003":
+                continue
+            vid = hid_id[1][-4:].upper()
+            pid = hid_id[2][-4:].upper()
+            if (vid, pid) not in SUPPORTED_IDS:
+                continue
+            supported_nodes += 1
+            product = fields.get("HID_NAME", "")
+            if "Keychron K10 HE" not in product:
+                continue
+            descriptor = (entry / "device" / "report_descriptor").read_bytes()
+            if descriptor != EXPECTED_DESCRIPTOR:
+                continue
+            candidates.append(
+                Candidate(
+                    path=dev_root / entry.name,
+                    serial=fields.get("HID_UNIQ", ""),
+                    product=product,
+                    vid=vid,
+                    pid=pid,
+                    physical_path=fields.get("HID_PHYS", ""),
+                )
+            )
+        except (OSError, UnicodeError):
+            continue
+
+    if serial:
+        candidates = [candidate for candidate in candidates if candidate.serial == serial]
+
+    if not candidates:
+        if supported_nodes and not serial:
+            raise HelperError(
+                "unsupported",
+                "A wired K10 HE was found, but its raw HID interface does not match the verified descriptor.",
+            )
+        if supported_nodes and serial:
+            raise HelperError(
+                "disconnected",
+                "The configured wired K10 HE serial is not connected on a verified raw HID interface.",
+            )
+        raise HelperError("disconnected", "No supported wired K10 HE is connected.")
+    if len(candidates) != 1:
+        raise HelperError(
+            "ambiguous",
+            "Multiple supported wired K10 HE raw HID interfaces match; configure one exact serial.",
+        )
+    return candidates[0]
+
+
+def build_command(command: int, value: int = 0) -> bytes:
+    if command not in (GET_PROFILES_INFO, SELECT_PROFILE):
+        raise ValueError("command is not allowlisted")
+    if command == SELECT_PROFILE and value not in (0, 2):
+        raise ValueError("profile selection is restricted to indices 0 and 2")
+    payload = bytearray(REPORT_SIZE)
+    payload[0] = TOP_COMMAND
+    payload[1] = command
+    if command == SELECT_PROFILE:
+        payload[2] = value
+    return bytes(payload)
+
+
+def parse_get_response(response: bytes) -> dict[str, int]:
+    if len(response) != REPORT_SIZE:
+        raise HelperError("protocol_error", f"GET response length was {len(response)}, expected 32.")
+    if response[0:2] != bytes((TOP_COMMAND, GET_PROFILES_INFO)):
+        raise HelperError("protocol_error", "GET response command did not match the request.")
+    current = response[2]
+    count = response[3]
+    profile_size = response[4] | (response[5] << 8)
+    if count != PROFILE_COUNT or current >= count or profile_size == 0:
+        raise HelperError("unsupported", "The keyboard returned an unsupported profile layout.")
+    return {
+        "activeIndex": current,
+        "profileCount": count,
+        "profileSize": profile_size,
+        "okmcCount": response[6],
+        "socdCount": response[7],
+    }
+
+
+def parse_select_response(response: bytes) -> None:
+    if len(response) != REPORT_SIZE:
+        raise HelperError("protocol_error", f"SELECT response length was {len(response)}, expected 32.")
+    if response[0:2] != bytes((TOP_COMMAND, SELECT_PROFILE)):
+        raise HelperError("protocol_error", "SELECT response command did not match the request.")
+    if response[2] != 0:
+        raise HelperError("selection_failed", "The keyboard rejected the profile selection.")
+
+
+class HidTransport:
+    def __init__(self, candidate: Candidate):
+        self.candidate = candidate
+        self.fd = -1
+
+    def __enter__(self) -> "HidTransport":
+        flags = os.O_RDWR | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+        try:
+            self.fd = os.open(self.candidate.path, flags)
+        except PermissionError as error:
+            raise HelperError(
+                "permission_denied",
+                "Permission denied for the K10 HE raw HID interface; no elevation was attempted.",
+            ) from error
+        except FileNotFoundError as error:
+            raise HelperError("disconnected", "The K10 HE disconnected before it could be opened.") from error
+        except OSError as error:
+            raise HelperError("io_error", f"Cannot open the K10 HE raw HID interface: {error}") from error
+        return self
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
+
+    def _drain(self) -> None:
+        while True:
+            try:
+                if not os.read(self.fd, 64):
+                    return
+            except BlockingIOError:
+                return
+            except OSError as error:
+                if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                    return
+                raise HelperError("io_error", f"Cannot clear stale HID input: {error}") from error
+
+    def exchange(self, payload: bytes, command: int, timeout: float = COMMAND_TIMEOUT) -> bytes:
+        if len(payload) != REPORT_SIZE or payload[0] != TOP_COMMAND or payload[1] != command:
+            raise ValueError("invalid HID payload")
+        self._drain()
+        wire_report = b"\x00" + payload
+        deadline = time.monotonic() + timeout
+
+        while True:
+            try:
+                written = os.write(self.fd, wire_report)
+                if written != len(wire_report):
+                    raise HelperError("io_error", "The HID output report was only partially written.")
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([], [self.fd], [], remaining)[1]:
+                    raise ProtocolTimeout("Timed out writing the HID command.")
+            except OSError as error:
+                raise HelperError("io_error", f"Cannot write the HID command: {error}") from error
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([self.fd], [], [], remaining)[0]:
+                raise ProtocolTimeout("Timed out waiting for the matching HID response.")
+            try:
+                response = os.read(self.fd, 64)
+            except BlockingIOError:
+                continue
+            except OSError as error:
+                raise HelperError("io_error", f"Cannot read the HID response: {error}") from error
+            if len(response) >= 2 and response[0] == TOP_COMMAND and response[1] == command:
+                return response
+
+
+def lock_path() -> Path:
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    directory = Path(runtime) if runtime else Path("/tmp")
+    return directory / f"omarchy-keychron-profiles-{os.getuid()}.lock"
+
+
+class OperationLock:
+    def __init__(self, timeout: float = LOCK_TIMEOUT):
+        self.timeout = timeout
+        self.fd = -1
+
+    def __enter__(self) -> "OperationLock":
+        path = lock_path()
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            self.fd = os.open(path, flags, 0o600)
+            metadata = os.fstat(self.fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
+                raise HelperError("lock_error", "The operation lock is not a user-owned regular file.")
+            os.fchmod(self.fd, 0o600)
+            deadline = time.monotonic() + self.timeout
+            while True:
+                try:
+                    fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return self
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise HelperError("busy", "Another Keychron profile operation is still running.")
+                    time.sleep(0.05)
+        except HelperError:
+            self.__exit__(None, None, None)
+            raise
+        except OSError as error:
+            self.__exit__(None, None, None)
+            raise HelperError("lock_error", f"Cannot create the operation lock: {error}") from error
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        if self.fd >= 0:
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_UN)
+            finally:
+                os.close(self.fd)
+                self.fd = -1
+
+
+def profile_result(candidate: Candidate, info: dict[str, int]) -> dict[str, Any]:
+    active = info["activeIndex"]
+    return {
+        "schema": SCHEMA,
+        "state": "ready",
+        "message": f"{PROFILE_NAMES[active]} hardware profile active.",
+        "connection": "wired",
+        "activeIndex": active,
+        "activeProfile": PROFILE_NAMES[active],
+        "profileCount": info["profileCount"],
+        "profileSize": info["profileSize"],
+        "okmcCount": info["okmcCount"],
+        "socdCount": info["socdCount"],
+        "device": str(candidate.path),
+        "serial": candidate.serial,
+        "product": candidate.product,
+        "vid": candidate.vid.lower(),
+        "pid": candidate.pid.lower(),
+    }
+
+
+def read_info(transport: HidTransport) -> dict[str, int]:
+    response = transport.exchange(build_command(GET_PROFILES_INFO), GET_PROFILES_INFO)
+    return parse_get_response(response)
+
+
+def run_status(serial: str) -> dict[str, Any]:
+    with OperationLock():
+        candidate = discover_device(serial)
+        with HidTransport(candidate) as transport:
+            return profile_result(candidate, read_info(transport))
+
+
+def run_select(serial: str, name: str) -> dict[str, Any]:
+    desired = SELECTABLE_PROFILES[name]
+    with OperationLock():
+        candidate = discover_device(serial)
+        with HidTransport(candidate) as transport:
+            before = read_info(transport)
+            if before["activeIndex"] == desired:
+                result = profile_result(candidate, before)
+                result.update({"operation": "select", "requested": name, "changed": False})
+                return result
+
+            response_recovered = False
+            try:
+                response = transport.exchange(
+                    build_command(SELECT_PROFILE, desired), SELECT_PROFILE
+                )
+                parse_select_response(response)
+            except ProtocolTimeout:
+                # The command may have reached the keyboard even if its response was lost.
+                # Read actual hardware state once; never retry SELECT blindly.
+                verified = read_info(transport)
+                if verified["activeIndex"] != desired:
+                    raise
+                response_recovered = True
+            else:
+                verified = read_info(transport)
+
+            if verified["activeIndex"] != desired:
+                raise HelperError(
+                    "verification_failed",
+                    "The hardware profile did not match the requested profile after selection.",
+                )
+            result = profile_result(candidate, verified)
+            result.update(
+                {
+                    "operation": "select",
+                    "requested": name,
+                    "changed": True,
+                    "responseRecovered": response_recovered,
+                }
+            )
+            return result
+
+
+def error_result(error: HelperError) -> dict[str, Any]:
+    return {
+        "schema": SCHEMA,
+        "state": error.state,
+        "message": error.message,
+        "activeIndex": None,
+        "activeProfile": None,
+    }
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Read or select a wired K10 HE profile.")
+    parser.add_argument("--serial", default="", help="exact K10 HE serial to target")
+    subparsers = parser.add_subparsers(dest="operation", required=True)
+    subparsers.add_parser("status", help="read the active hardware profile")
+    select_parser = subparsers.add_parser("select", help="select one allowlisted profile")
+    select_parser.add_argument("profile", choices=tuple(SELECTABLE_PROFILES))
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.serial and not SERIAL_RE.fullmatch(args.serial):
+        error = HelperError("configuration_error", "The configured serial has an invalid format.", 2)
+        print(json.dumps(error_result(error), sort_keys=True))
+        return error.exit_code
+    try:
+        if args.operation == "status":
+            result = run_status(args.serial)
+        else:
+            result = run_select(args.serial, args.profile)
+    except HelperError as error:
+        print(json.dumps(error_result(error), sort_keys=True))
+        return error.exit_code
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

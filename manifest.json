@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ol4vr.keychron-profiles",
+  "name": "Keychron Profiles",
+  "version": "0.1.0",
+  "author": "ol4vr",
+  "license": "MIT",
+  "description": "Hardware-backed Gamepad Mode toggle for Hugin's wired Keychron K10 HE.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Indicators.qml"
+  },
+  "barWidget": {
+    "displayName": "Keychron Profiles",
+    "description": "Indicators clone with a K10 HE Gamepad Mode toggle",
+    "category": "Status",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "serial": ""
+    },
+    "schema": [
+      {
+        "key": "items",
+        "type": "multiselect",
+        "label": "Indicators",
+        "description": "Choose the standard indicators shown alongside the mandatory Gamepad Mode toggle.",
+        "noSelectionText": "All indicators",
+        "placeholderText": "Search indicators...",
+        "emptyText": "No indicators",
+        "options": [
+          {
+            "value": "Dictation",
+            "label": "Dictation",
+            "description": "Voice typing status"
+          },
+          {
+            "value": "PttMode",
+            "label": "Discord PTT",
+            "description": "Discord push-to-talk mode"
+          },
+          {
+            "value": "ScreenRecording",
+            "label": "Screen recording",
+            "description": "GPU screen recorder status"
+          },
+          {
+            "value": "Reminder",
+            "label": "Reminder",
+            "description": "Queued reminder status"
+          },
+          {
+            "value": "NightLight",
+            "label": "Night light",
+            "description": "Blue-light filter"
+          },
+          {
+            "value": "Dnd",
+            "label": "Do not disturb",
+            "description": "Notification silencing"
+          },
+          {
+            "value": "StayAwake",
+            "label": "Stay awake",
+            "description": "Idle lock and screensaver override"
+          },
+          {
+            "value": "GamepadMode",
+            "label": "Gamepad Mode",
+            "description": "Wired Keychron K10 HE hardware profile"
+          }
+        ]
+      },
+      {
+        "key": "alwaysShow",
+        "type": "boolean",
+        "label": "Always Show",
+        "description": "Show inactive indicators without waiting for hover.",
+        "defaultValue": false
+      },
+      {
+        "key": "serial",
+        "type": "string",
+        "label": "K10 HE serial",
+        "defaultValue": "",
+        "description": "Exact wired keyboard serial. Leave empty only when one supported K10 HE is connected."
+      }
+    ]
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.indicators"
+  }
+}

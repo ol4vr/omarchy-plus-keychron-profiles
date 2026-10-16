@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+expected_repo_name=omarchy-plus-keychron-profiles
+plugin_id=io.github.ol4vr.keychron-profiles
+plugin_root=${XDG_CONFIG_HOME:-"$HOME/.config"}/omarchy/plugins
+target="$plugin_root/$plugin_id"
+mode=${1:-remove}
+
+case "$mode" in
+  remove|--check) ;;
+  *) echo "Usage: $0 [--check]" >&2; exit 2 ;;
+esac
+[[ $(basename -- "$repo") == "$expected_repo_name" && -d "$repo/.git" ]] || {
+  echo "Refusing unexpected source repository: $repo" >&2; exit 1;
+}
+
+if [[ ! -e "$target" ]]; then
+  echo "No Keychron Profiles development copy is present."
+  [[ "$mode" != --check ]] || echo "Keychron Profiles development removal check: PASS"
+  exit 0
+fi
+[[ -d "$target" && ! -e "$target/.git" && -f "$target/.omarchy-plus-development" ]] || {
+  echo "Refusing unrecognized or Git-managed plugin target: $target" >&2; exit 1;
+}
+
+expected_marker=$(mktemp /tmp/omarchy-plus-keychron-profiles-marker.XXXXXX)
+trap 'rm -f -- "$expected_marker"' EXIT
+printf '%s\n' 'schema=1' "id=$plugin_id" "source=$repo" > "$expected_marker"
+cmp -s "$expected_marker" "$target/.omarchy-plus-development" || {
+  echo "Refusing development directory with a foreign marker: $target" >&2; exit 1;
+}
+
+if [[ "$mode" == --check ]]; then
+  echo "Keychron Profiles development removal check: PASS"
+  echo "Recognized removable target: $target"
+  exit 0
+fi
+
+rm -rf -- "$target"
+omarchy-shell shell rescanPlugins
+echo "Removed Keychron Profiles development copy: $target"
+echo "The source repository and keyboard were not changed."
+
+shell_config=${XDG_CONFIG_HOME:-"$HOME/.config"}/omarchy/shell.json
+if [[ -f "$shell_config" ]] && jq -e --arg id "$plugin_id" \
+  '.. | objects | select(.id? == $id)' "$shell_config" >/dev/null 2>&1; then
+  echo "The plugin ID remains in $shell_config; review enablement separately."
+else
+  echo "No remaining plugin entry was found in $shell_config."
+fi

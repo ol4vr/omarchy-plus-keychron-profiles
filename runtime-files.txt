@@ -1,0 +1,16 @@
+Indicators.qml
+Model.js
+Service.qml
+indicators/Dictation.qml
+indicators/Dnd.qml
+indicators/GamepadMode.qml
+indicators/NightLight.qml
+indicators/PttMode.qml
+indicators/Reminder.qml
+indicators/ScreenRecording.qml
+indicators/StayAwake.qml
+keychron-profiles
+LICENSE
+THIRD_PARTY.md
+README.md
+manifest.json
