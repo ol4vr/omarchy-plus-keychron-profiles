@@ -52,3 +52,20 @@ is an owned clone, not an individual indicator-contribution manifest.
   Hugin-installed indicator at import time.
 - License: MIT, copyright 2026 ol4vr. See the source repository's
   `LICENSE`.
+
+## Keychron HE protocol reference
+
+- Upstream: <https://github.com/Keychron/qmk_firmware>
+- Revision: `bc56b3c611dcc1a8ed9a2acb8bdc4da5e1a80c27`
+  (`hall_effect_playground` observed 2026-10-22)
+- Reviewed files: `keyboards/keychron/q1_he/ansi_encoder/info.json`,
+  `keyboards/keychron/q1_he/ansi_encoder/profiles.c`,
+  `keyboards/keychron/common/analog_matrix/analog_matrix.c`, and
+  `keyboards/keychron/common/analog_matrix/profile.c`
+- Use: protocol and profile-contract provenance only; no upstream source is
+  copied into this repository.
+- Verified contract: three profiles, Default index 0, Gamepad index 2,
+  `AMC_GET_PROFILES_INFO` subcommand `0x10`, and `AMC_SELECT_PROFILE`
+  subcommand `0x11` beneath command byte `0xA9`.
+- License of reviewed upstream files: GPL-2.0-or-later, as stated in their
+  source headers.

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.ol4vr.keychron-profiles",
   "name": "Keychron Profiles",
-  "version": "0.1.1",
+  "version": "0.2.0-candidate.1",
   "author": "ol4vr",
   "license": "MIT",
-  "description": "Hardware-backed Gamepad Mode toggle for Hugin's wired Keychron K10 HE.",
+  "description": "Hardware-backed Gamepad Mode toggle for Hugin's supported wired Keychron HE keyboards.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,13 +16,11 @@
   },
   "barWidget": {
     "displayName": "Keychron Profiles",
-    "description": "Indicators clone with a K10 HE Gamepad Mode toggle",
+    "description": "Indicators clone with a Keychron HE Gamepad Mode toggle",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "center",
-    "defaults": {
-      "serial": ""
-    },
+    "defaults": {},
     "schema": [
       {
         "key": "items",
@@ -71,7 +69,7 @@
           {
             "value": "GamepadMode",
             "label": "Gamepad Mode",
-            "description": "Wired Keychron K10 HE hardware profile"
+            "description": "Connected wired Keychron HE hardware profile"
           }
         ]
       },
@@ -81,13 +79,6 @@
         "label": "Always Show",
         "description": "Show inactive indicators without waiting for hover.",
         "defaultValue": false
-      },
-      {
-        "key": "serial",
-        "type": "string",
-        "label": "K10 HE serial",
-        "defaultValue": "",
-        "description": "Exact wired keyboard serial. Leave empty only when one supported K10 HE is connected."
       }
     ]
   },

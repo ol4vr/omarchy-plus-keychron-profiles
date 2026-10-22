@@ -1,0 +1,4 @@
+# Keychron Q1 HE wired profile-control HID only.
+# usb_id properties are imported by 60-persistent-input.rules before this rule;
+# 73-seat-late.rules then applies the active local session's uaccess ACL.
+ACTION!="remove", SUBSYSTEM=="hidraw", ENV{ID_BUS}=="usb", ENV{ID_VENDOR_ID}=="3434", ENV{ID_MODEL_ID}=="0b16", ENV{ID_USB_INTERFACE_NUM}=="01", TAG+="uaccess"

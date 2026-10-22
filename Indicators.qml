@@ -9,7 +9,6 @@ BarWidget {
   moduleName: "omarchy.indicators"
 
   readonly property string keychronPluginId: "io.github.ol4vr.keychron-profiles"
-  readonly property string defaultKeychronSerial: ""
   readonly property var keychronService: bar && bar.shell
     ? bar.shell.serviceFor(keychronPluginId) : null
   readonly property var defaultIndicatorEntries: [ "Dictation", "PttMode", "ScreenRecording", "Reminder", "NightLight", "Dnd", "StayAwake", "GamepadMode" ]
@@ -72,11 +71,6 @@ BarWidget {
     }
     if (!hasGamepadMode) result.push("GamepadMode")
     return result
-  }
-
-  function configureKeychronService() {
-    if (keychronService)
-      keychronService.configureSerial(setting("serial", defaultKeychronSerial))
   }
 
   function setIndicatorAreaHovered(hovered) {
@@ -202,11 +196,8 @@ BarWidget {
   }
 
   Component.onCompleted: {
-    root.configureKeychronService()
     root.refreshRequested()
   }
-  onKeychronServiceChanged: configureKeychronService()
-  onSettingsChanged: configureKeychronService()
 
   Row {
     id: horizontalIndicators

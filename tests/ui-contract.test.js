@@ -14,7 +14,7 @@ const thirdParty = fs.readFileSync(path.join(root, "THIRD_PARTY.md"), "utf8");
 
 test("manifest declares a singleton owned Indicators clone", () => {
   assert.equal(manifest.id, "io.github.ol4vr.keychron-profiles");
-  assert.equal(manifest.version, "0.1.1");
+  assert.equal(manifest.version, "0.2.0-candidate.1");
   assert.deepEqual(manifest.kinds, ["service", "bar-widget"]);
   assert.equal(manifest.entryPoints.service, "Service.qml");
   assert.equal(manifest.entryPoints.barWidget, "Indicators.qml");
@@ -22,7 +22,8 @@ test("manifest declares a singleton owned Indicators clone", () => {
   assert.equal(manifest.barWidget.defaultSection, "center");
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.indicators");
   assert.equal(manifest.author, "ol4vr");
-  assert.equal(manifest.barWidget.defaults.serial, "");
+  assert.deepEqual(manifest.barWidget.defaults, {});
+  assert.equal(manifest.barWidget.schema.some(entry => entry.key === "serial"), false);
 });
 
 test("only the process-wide service owns polling and helper processes", () => {
@@ -32,6 +33,8 @@ test("only the process-wide service owns polling and helper processes", () => {
   assert.doesNotMatch(gamepad, /Process \{/);
   assert.doesNotMatch(gamepad, /Timer \{/);
   assert.match(gamepad, /serviceFor\("io\.github\.ol4vr\.keychron-profiles"\)/);
+  assert.doesNotMatch(service, /--serial|configureSerial/);
+  assert.doesNotMatch(indicators, /configureSerial|defaultKeychronSerial/);
 });
 
 test("one directly clickable Gamepad toggle replaces the standalone UI", () => {
@@ -56,13 +59,17 @@ test("helper source contains only the approved HE command constants", () => {
   assert.match(helper, /SELECT_PROFILE = 0x11/);
   assert.doesNotMatch(helper, /SET_CURVE|SAVE_PROFILE|RESET_PROFILE|CALIBR/);
   assert.match(helper, /SELECTABLE_PROFILES = \{"default": 0, "gamepad": 2\}/);
+  assert.match(helper, /\("3434", "0EA0"\)/);
+  assert.match(helper, /\("3434", "0EA1"\)/);
+  assert.match(helper, /\("3434", "0B16"\)/);
+  assert.match(helper, /Multiple supported wired Keychron HE keyboards are connected/);
 });
 
 test("release documentation records recovery, clone reconciliation, and hardware limits", () => {
   assert.match(readme, /scripts\/plugins\/reconcile/);
   assert.match(readme, /Omarchy Indicators clone maintenance/);
-  assert.match(readme, /supports only the wired K10 HE/);
-  assert.match(readme, /Q1 HE 8K/);
+  assert.match(readme, /K10 HE and Q1 HE/);
+  assert.match(readme, /If both are\s+present/);
   assert.match(thirdParty, /c668141e9c42b13c80c9ca4ea108e11708c5e8a5/);
   assert.match(thirdParty, /No mutable\s+upstream branch is an automatic update authority/);
 });

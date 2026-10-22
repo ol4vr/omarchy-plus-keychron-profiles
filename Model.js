@@ -19,7 +19,9 @@ function parseStatus(raw) {
     if (value.state === "ready") {
       if ([0, 1, 2].indexOf(value.activeIndex) === -1 || value.profileCount !== 3)
         return null
-      if (typeof value.serial !== "string" || value.connection !== "wired")
+      if (typeof value.serial !== "string" || value.connection !== "wired"
+          || ["k10-he", "q1-he"].indexOf(value.model) === -1
+          || typeof value.modelName !== "string" || value.modelName === "")
         return null
     }
     return value
@@ -58,10 +60,10 @@ function stateLabel(status) {
 }
 
 function tooltip(status) {
-  if (!status) return "K10 HE · Checking hardware profile…"
+  if (!status) return "Keychron HE · Checking hardware profile…"
   if (status.state === "ready")
-    return "K10 HE · " + profileName(status.activeIndex) + " · Wired"
-  return "K10 HE · " + stateLabel(status)
+    return status.modelName + " · " + profileName(status.activeIndex) + " · Wired"
+  return "Keychron HE · " + stateLabel(status)
 }
 
 if (typeof module !== "undefined") {

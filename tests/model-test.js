@@ -9,6 +9,8 @@ const ready = model.parseStatus(JSON.stringify({
   activeIndex: 2,
   activeProfile: "Gamepad",
   profileCount: 3,
+  model: "q1-he",
+  modelName: "Q1 HE",
   serial: "SERIAL1"
 }));
 
@@ -20,6 +22,7 @@ assert.equal(model.icon(ready), "󰊗");
 assert.equal(model.canSwitch(ready), true);
 assert.equal(model.stateLabel(ready), "Gamepad");
 assert.match(model.tooltip(ready), /Gamepad · Wired/);
+assert.match(model.tooltip(ready), /^Q1 HE/);
 
 const disconnected = model.parseStatus(JSON.stringify({
   schema: 1,
@@ -38,6 +41,8 @@ const profile2 = model.parseStatus(JSON.stringify({
   activeIndex: 1,
   activeProfile: "Profile 2",
   profileCount: 3,
+  model: "k10-he",
+  modelName: "K10 HE",
   serial: "SERIAL1"
 }));
 assert.ok(profile2);

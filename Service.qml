@@ -9,11 +9,10 @@ Item {
 
   readonly property string helperPath: Quickshell.env("HOME")
     + "/.config/omarchy/plugins/io.github.ol4vr.keychron-profiles/keychron-profiles"
-  property string serial: ""
   property var snapshot: ({
     schema: 1,
     state: "checking",
-    message: "Reading the K10 HE hardware profile.",
+    message: "Reading the connected Keychron HE hardware profile.",
     activeIndex: null,
     activeProfile: null
   })
@@ -22,16 +21,7 @@ Item {
   readonly property bool busy: statusProcess.running || actionProcess.running
 
   function command(arguments) {
-    var result = [root.helperPath]
-    if (root.serial !== "") result = result.concat(["--serial", root.serial])
-    return result.concat(arguments)
-  }
-
-  function configureSerial(value) {
-    var next = String(value || "").trim()
-    if (next === root.serial) return
-    root.serial = next
-    root.refresh()
+    return [root.helperPath].concat(arguments)
   }
 
   function acceptOutput(raw, fallbackState, fallbackMessage) {

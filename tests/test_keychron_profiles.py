@@ -4,6 +4,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -50,6 +51,12 @@ class FixtureTree:
 
     def close(self) -> None:
         self.temp.cleanup()
+
+    def clear(self) -> None:
+        shutil.rmtree(self.sysfs)
+        shutil.rmtree(self.dev)
+        self.sysfs.mkdir()
+        self.dev.mkdir()
 
     def add(
         self,
@@ -151,7 +158,7 @@ class DiscoveryTests(unittest.TestCase):
         self.fixture.close()
 
     def test_missing_device_fails_closed(self) -> None:
-        with self.assertRaisesRegex(kp.HelperError, "No supported wired K10 HE") as caught:
+        with self.assertRaisesRegex(kp.HelperError, "No supported wired Keychron HE") as caught:
             kp.discover_device(sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev)
         self.assertEqual(caught.exception.state, "disconnected")
 
@@ -161,17 +168,73 @@ class DiscoveryTests(unittest.TestCase):
             kp.discover_device(sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev)
         self.assertEqual(caught.exception.state, "unsupported")
 
-    def test_exact_serial_disambiguates_two_keyboards(self) -> None:
+    def test_exact_serial_validates_one_keyboard_but_never_resolves_ambiguity(self) -> None:
         self.fixture.add(1, serial="FIRST")
-        self.fixture.add(2, serial="SECOND")
+        chosen = kp.discover_device(
+            "FIRST", sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+        )
+        self.assertEqual(chosen.serial, "FIRST")
+
+        with self.assertRaises(kp.HelperError) as caught:
+            kp.discover_device(
+                "SECOND", sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+            )
+        self.assertEqual(caught.exception.state, "disconnected")
+
+        self.fixture.add(
+            2,
+            serial="SECOND",
+            pid="0B16",
+            product="Keychron Keychron Q1 HE",
+        )
+        with self.assertRaises(kp.HelperError) as caught:
+            kp.discover_device(
+                "SECOND", sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+            )
+        self.assertEqual(caught.exception.state, "ambiguous")
+
+    def test_q1_uses_its_verified_identity_and_shared_profile_contract(self) -> None:
+        self.fixture.add(
+            2,
+            pid="0B16",
+            product="Keychron Keychron Q1 HE",
+        )
+        chosen = kp.discover_device(
+            sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+        )
+        self.assertEqual(chosen.path, self.fixture.dev / "hidraw2")
+        self.assertEqual(chosen.model.key, "q1-he")
+        self.assertEqual(chosen.model.default_index, 0)
+        self.assertEqual(chosen.model.gamepad_index, 2)
+
+    def test_disconnect_and_reconnect_rediscovers_each_model(self) -> None:
+        self.fixture.add(1)
+        first = kp.discover_device(
+            sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+        )
+        self.assertEqual(first.model.key, "k10-he")
+
+        self.fixture.clear()
         with self.assertRaises(kp.HelperError) as caught:
             kp.discover_device(sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev)
-        self.assertEqual(caught.exception.state, "ambiguous")
-        chosen = kp.discover_device(
-            "SECOND", sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+        self.assertEqual(caught.exception.state, "disconnected")
+
+        self.fixture.add(
+            2,
+            pid="0B16",
+            product="Keychron Keychron Q1 HE",
         )
-        self.assertEqual(chosen.serial, "SECOND")
-        self.assertEqual(chosen.path, self.fixture.dev / "hidraw2")
+        second = kp.discover_device(
+            sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+        )
+        self.assertEqual(second.model.key, "q1-he")
+
+        self.fixture.clear()
+        self.fixture.add(3)
+        third = kp.discover_device(
+            sysfs_root=self.fixture.sysfs, dev_root=self.fixture.dev
+        )
+        self.assertEqual(third.model.key, "k10-he")
 
     def test_product_mismatch_on_supported_id_is_unsupported(self) -> None:
         self.fixture.add(1, product="Keychron Q1 HE")
@@ -194,9 +257,11 @@ class SelectionTests(unittest.TestCase):
         vid="3434",
         pid="0EA1",
         physical_path="usb-test/input1",
+        model=kp.SUPPORTED_MODELS[0],
     )
 
     def run_with_transport(self, transport: FakeTransport, profile: str):
+        transport.candidate = self.candidate
         with (
             mock.patch.object(kp, "OperationLock", return_value=contextlib.nullcontext()),
             mock.patch.object(kp, "discover_device", return_value=self.candidate),
@@ -210,6 +275,18 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(result["changed"])
         self.assertEqual([call[1] for call in transport.calls], [kp.GET_PROFILES_INFO])
 
+    def test_status_reflects_an_external_profile_change_without_writing(self) -> None:
+        transport = FakeTransport([get_response(2)])
+        transport.candidate = self.candidate
+        with (
+            mock.patch.object(kp, "OperationLock", return_value=contextlib.nullcontext()),
+            mock.patch.object(kp, "discover_device", return_value=self.candidate),
+            mock.patch.object(kp, "HidTransport", return_value=transport),
+        ):
+            result = kp.run_status("")
+        self.assertEqual(result["activeIndex"], 2)
+        self.assertEqual([call[1] for call in transport.calls], [kp.GET_PROFILES_INFO])
+
     def test_select_is_verified_with_a_fresh_get(self) -> None:
         transport = FakeTransport([get_response(0), select_response(), get_response(2)])
         result = self.run_with_transport(transport, "gamepad")
@@ -220,6 +297,30 @@ class SelectionTests(unittest.TestCase):
             [kp.GET_PROFILES_INFO, kp.SELECT_PROFILE, kp.GET_PROFILES_INFO],
         )
         self.assertEqual(transport.calls[1][0][2], 2)
+
+    def test_q1_uses_the_same_bounded_selection_sequence(self) -> None:
+        candidate = kp.Candidate(
+            path=Path("/dev/hidraw-q1"),
+            serial="SERIAL2",
+            product="Keychron Keychron Q1 HE",
+            vid="3434",
+            pid="0B16",
+            physical_path="usb-test/input2",
+            model=kp.SUPPORTED_MODELS[1],
+        )
+        transport = FakeTransport([get_response(0), select_response(), get_response(2)])
+        transport.candidate = candidate
+        with (
+            mock.patch.object(kp, "OperationLock", return_value=contextlib.nullcontext()),
+            mock.patch.object(kp, "discover_device", return_value=candidate),
+            mock.patch.object(kp, "HidTransport", return_value=transport),
+        ):
+            result = kp.run_select("", "gamepad")
+        self.assertEqual(result["model"], "q1-he")
+        self.assertEqual(
+            [call[1] for call in transport.calls],
+            [kp.GET_PROFILES_INFO, kp.SELECT_PROFILE, kp.GET_PROFILES_INFO],
+        )
 
     def test_lost_select_response_uses_get_without_retry(self) -> None:
         transport = FakeTransport(

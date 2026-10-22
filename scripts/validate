@@ -6,6 +6,7 @@ repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 expected_id=io.github.ol4vr.keychron-profiles
 runtime_list="$repo/runtime-files.txt"
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+udev_rule="$repo/system/udev/70-keychron-profiles.rules"
 
 python3 - "$repo" "$expected_id" "$runtime_list" <<'PY'
 from __future__ import annotations
@@ -22,8 +23,8 @@ manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
 
 if manifest.get("schemaVersion") != 1 or manifest.get("id") != expected_id:
     raise RuntimeError("manifest identity does not match Keychron Profiles")
-if manifest.get("version") != "0.1.1":
-    raise RuntimeError("manifest version must be 0.1.1")
+if manifest.get("version") != "0.2.0-candidate.1":
+    raise RuntimeError("manifest version must be 0.2.0-candidate.1")
 if manifest.get("kinds") != ["service", "bar-widget"]:
     raise RuntimeError("Keychron Profiles must declare service and bar-widget")
 if manifest.get("entryPoints") != {"service": "Service.qml", "barWidget": "Indicators.qml"}:
@@ -101,10 +102,22 @@ path = Path(sys.argv[1])
 compile(path.read_text(encoding="utf-8"), str(path), "exec")
 PY
 bash -n "$repo/scripts/validate" "$repo/scripts/dev-deploy" "$repo/scripts/dev-remove"
+udevadm verify --resolve-names=never "$udev_rule"
+
+[[ $(grep -cvE '^[[:space:]]*(#|$)' "$udev_rule") -eq 1 ]] || {
+  echo 'Keychron udev policy must contain exactly one active rule' >&2
+  exit 1
+}
+rg -q 'ACTION!="remove", SUBSYSTEM=="hidraw", ENV\{ID_BUS\}=="usb", ENV\{ID_VENDOR_ID\}=="3434", ENV\{ID_MODEL_ID\}=="0b16", ENV\{ID_USB_INTERFACE_NUM\}=="01", TAG\+="uaccess"' "$udev_rule"
+if rg -q '(MODE=|GROUP=|0ea[01]|ID_USB_INTERFACE_NUM\}=="0[02]")' "$udev_rule"; then
+  echo 'Keychron udev policy broadened beyond the Q1 profile-control interface' >&2
+  exit 1
+fi
 
 rg -q 'GET_PROFILES_INFO = 0x10' "$repo/keychron-profiles"
 rg -q 'SELECT_PROFILE = 0x11' "$repo/keychron-profiles"
 rg -q 'SELECTABLE_PROFILES = \{"default": 0, "gamepad": 2\}' "$repo/keychron-profiles"
+rg -q '("3434", "0B16")' "$repo/keychron-profiles"
 rg -q 'interval: 2000' "$repo/Service.qml"
 rg -q 'serviceFor\("io.github.ol4vr.keychron-profiles"\)' "$repo/indicators/GamepadMode.qml"
 if rg -q 'Process \{|Timer \{' "$repo/indicators/GamepadMode.qml"; then

@@ -15,6 +15,8 @@ BarIndicator {
   readonly property bool hardwareReady: Model.canSwitch(snapshot)
   readonly property bool gamepadEnabled: hardwareReady && snapshot.activeIndex === 2
   readonly property bool unavailable: !hardwareReady
+  readonly property string modelName: snapshot && snapshot.modelName
+    ? snapshot.modelName : "Keychron HE"
   readonly property string statusTooltip: root.tooltipForState()
 
   function tooltipForState() {
@@ -22,8 +24,8 @@ BarIndicator {
       return "Gamepad Mode · Waiting for hardware confirmation"
     if (root.hardwareReady)
       return root.gamepadEnabled
-        ? "Disable Gamepad Mode · K10 HE"
-        : "Enable Gamepad Mode · K10 HE"
+        ? "Disable Gamepad Mode · " + root.modelName
+        : "Enable Gamepad Mode · " + root.modelName
     if (root.snapshot && root.snapshot.state === "ready" && root.snapshot.activeIndex === 1)
       return "Gamepad Mode unavailable · Profile 2 active"
     return "Gamepad Mode unavailable · " + Model.stateLabel(root.snapshot)
