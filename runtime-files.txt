@@ -1,8 +1,10 @@
 Indicators.qml
+CopyOnSelectModel.js
 Model.js
 Service.qml
 indicators/Dictation.qml
 indicators/Dnd.qml
+indicators/CopyOnSelect.qml
 indicators/GamepadMode.qml
 indicators/NightLight.qml
 indicators/PttMode.qml

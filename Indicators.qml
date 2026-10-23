@@ -11,7 +11,7 @@ BarWidget {
   readonly property string keychronPluginId: "io.github.ol4vr.keychron-profiles"
   readonly property var keychronService: bar && bar.shell
     ? bar.shell.serviceFor(keychronPluginId) : null
-  readonly property var defaultIndicatorEntries: [ "Dictation", "PttMode", "ScreenRecording", "Reminder", "NightLight", "Dnd", "StayAwake", "GamepadMode" ]
+  readonly property var defaultIndicatorEntries: [ "Dictation", "PttMode", "ScreenRecording", "Reminder", "NightLight", "Dnd", "StayAwake", "CopyOnSelect", "GamepadMode" ]
   readonly property var indicatorEntries: indicatorEntriesFromSettings(settings)
   property var activeIndicatorIds: []
   property var indicatorActiveStates: ({})
@@ -60,15 +60,17 @@ BarWidget {
       var id = entryId(item)
       if (id !== "") result.push(item)
     }
-    // Gamepad Mode is this owned clone's single contribution. Keep it present
-    // even when settings inherited from the stock Indicators widget predate it.
+    // Keep this owned clone's Hugin controls present even when settings
+    // inherited from the stock Indicators widget predate them.
+    var hasCopyOnSelect = false
     var hasGamepadMode = false
     for (var j = 0; j < result.length; j++) {
+      if (entryId(result[j]) === "CopyOnSelect") hasCopyOnSelect = true
       if (entryId(result[j]) === "GamepadMode") {
         hasGamepadMode = true
-        break
       }
     }
+    if (!hasCopyOnSelect) result.push("CopyOnSelect")
     if (!hasGamepadMode) result.push("GamepadMode")
     return result
   }

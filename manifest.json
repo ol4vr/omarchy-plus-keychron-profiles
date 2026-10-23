@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.ol4vr.keychron-profiles",
   "name": "Keychron Profiles",
-  "version": "0.2.0-candidate.1",
+  "version": "0.3.0-candidate.1",
   "author": "ol4vr",
   "license": "MIT",
-  "description": "Hardware-backed Gamepad Mode toggle for Hugin's supported wired Keychron HE keyboards.",
+  "description": "Hugin center indicators for Copy on Select and hardware-backed Keychron Gamepad Mode.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Keychron Profiles",
-    "description": "Indicators clone with a Keychron HE Gamepad Mode toggle",
+    "description": "Indicators clone with Copy on Select and Keychron Gamepad Mode toggles",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "center",
@@ -65,6 +65,11 @@
             "value": "StayAwake",
             "label": "Stay awake",
             "description": "Idle lock and screensaver override"
+          },
+          {
+            "value": "CopyOnSelect",
+            "label": "Copy on Select",
+            "description": "Selection-to-clipboard feature state"
           },
           {
             "value": "GamepadMode",

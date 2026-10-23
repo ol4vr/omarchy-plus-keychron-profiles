@@ -1,8 +1,19 @@
-# Keychron Profiles
+# Hugin Indicators
 
-Keychron Profiles is the owned Omarchy+ Quickshell plugin for Hugin's wired
-Keychron K10 HE and Q1 HE. It contributes one directly clickable **Gamepad Mode** toggle
-to the existing center Indicators flyout:
+Hugin Indicators is the owned Omarchy+ Quickshell plugin that extends the
+existing center Indicators flyout with directly clickable **Copy on Select**
+and **Gamepad Mode** controls. The permanent plugin ID remains
+`io.github.ol4vr.keychron-profiles` for recovery compatibility.
+
+Copy on Select uses the central
+`scripts/hugin/reconcile-copy-on-select` interface for every query and change.
+Its `nf-fa-clipboard_check` (`U+F57A`) icon changes only through the standard
+active/inactive styling. The process-wide service verifies every change before
+updating the UI, watches the private settings file for terminal changes, and
+does not add another polling timer or clipboard watcher. Its toggle never
+changes the independent character-count notification preference.
+
+For Hugin's wired Keychron K10 HE and Q1 HE, Gamepad Mode behaves as follows:
 
 - OFF selects and reflects Default, hardware profile index 0.
 - ON selects and reflects Gamepad, hardware profile index 2.
@@ -14,8 +25,7 @@ to the existing center Indicators flyout:
 There is no profile panel, popup, submenu, app-triggered switching, or separate
 top-bar widget.
 
-The permanent plugin ID is `io.github.ol4vr.keychron-profiles`. The
-`0.2.0-candidate.1` source candidate supports the accepted K10 HE identities
+The `0.3.0-candidate.1` source candidate supports the accepted K10 HE identities
 (`3434:0ea0`, `3434:0ea1`) and Hugin's observed Q1 HE identity
 (`3434:0b16`). Exactly one supported keyboard must be connected. If both are
 present, the integration reports an ambiguous, non-actionable state rather

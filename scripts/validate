@@ -23,8 +23,8 @@ manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
 
 if manifest.get("schemaVersion") != 1 or manifest.get("id") != expected_id:
     raise RuntimeError("manifest identity does not match Keychron Profiles")
-if manifest.get("version") != "0.2.0-candidate.1":
-    raise RuntimeError("manifest version must be 0.2.0-candidate.1")
+if manifest.get("version") != "0.3.0-candidate.1":
+    raise RuntimeError("manifest version must be 0.3.0-candidate.1")
 if manifest.get("kinds") != ["service", "bar-widget"]:
     raise RuntimeError("Keychron Profiles must declare service and bar-widget")
 if manifest.get("entryPoints") != {"service": "Service.qml", "barWidget": "Indicators.qml"}:
@@ -50,6 +50,7 @@ for line in runtime_list.read_text(encoding="utf-8").splitlines():
 
 required = (
     "manifest.json", "Service.qml", "Indicators.qml", "Model.js",
+    "CopyOnSelectModel.js", "indicators/CopyOnSelect.qml",
     "indicators/GamepadMode.qml", "keychron-profiles", "README.md",
     "THIRD_PARTY.md", "LICENSE",
 )
@@ -90,9 +91,10 @@ omarchy plugin validate "$repo"
 # Hugin's qmllint 1.0 returns 255 for the unmodified stock Indicators.qml and
 # first-party optional-chaining indicator files. Lint only authored QML here;
 # the complete clone is checked by Omarchy's manifest validator and live load.
-qmllint -I "$omarchy_path/shell" "$repo/Service.qml" "$repo/indicators/GamepadMode.qml"
+qmllint -I "$omarchy_path/shell" "$repo/Service.qml" "$repo/indicators/CopyOnSelect.qml" "$repo/indicators/GamepadMode.qml"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$repo/tests" -p 'test_*.py'
 node "$repo/tests/model-test.js"
+node "$repo/tests/copy-on-select-model-test.js"
 node --test "$repo/tests/ui-contract.test.js"
 python3 - "$repo/keychron-profiles" <<'PY'
 from pathlib import Path
@@ -120,6 +122,8 @@ rg -q 'SELECTABLE_PROFILES = \{"default": 0, "gamepad": 2\}' "$repo/keychron-pro
 rg -q '("3434", "0B16")' "$repo/keychron-profiles"
 rg -q 'interval: 2000' "$repo/Service.qml"
 rg -q 'serviceFor\("io.github.ol4vr.keychron-profiles"\)' "$repo/indicators/GamepadMode.qml"
+rg -q 'activeText: ""' "$repo/indicators/CopyOnSelect.qml"
+rg -q 'inactiveText: ""' "$repo/indicators/CopyOnSelect.qml"
 if rg -q 'Process \{|Timer \{' "$repo/indicators/GamepadMode.qml"; then
   echo 'GamepadMode.qml must not own helper processes or the polling timer' >&2
   exit 1

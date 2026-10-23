@@ -8,13 +8,14 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "u
 const service = fs.readFileSync(path.join(root, "Service.qml"), "utf8");
 const indicators = fs.readFileSync(path.join(root, "Indicators.qml"), "utf8");
 const gamepad = fs.readFileSync(path.join(root, "indicators", "GamepadMode.qml"), "utf8");
+const copyOnSelect = fs.readFileSync(path.join(root, "indicators", "CopyOnSelect.qml"), "utf8");
 const helper = fs.readFileSync(path.join(root, "keychron-profiles"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const thirdParty = fs.readFileSync(path.join(root, "THIRD_PARTY.md"), "utf8");
 
 test("manifest declares a singleton owned Indicators clone", () => {
   assert.equal(manifest.id, "io.github.ol4vr.keychron-profiles");
-  assert.equal(manifest.version, "0.2.0-candidate.1");
+  assert.equal(manifest.version, "0.3.0-candidate.1");
   assert.deepEqual(manifest.kinds, ["service", "bar-widget"]);
   assert.equal(manifest.entryPoints.service, "Service.qml");
   assert.equal(manifest.entryPoints.barWidget, "Indicators.qml");
@@ -29,12 +30,25 @@ test("manifest declares a singleton owned Indicators clone", () => {
 test("only the process-wide service owns polling and helper processes", () => {
   assert.match(service, /interval: 2000/);
   assert.match(service, /triggeredOnStart: true/);
-  assert.equal((service.match(/Process \{/g) || []).length, 2);
+  assert.equal((service.match(/Process \{/g) || []).length, 4);
   assert.doesNotMatch(gamepad, /Process \{/);
   assert.doesNotMatch(gamepad, /Timer \{/);
   assert.match(gamepad, /serviceFor\("io\.github\.ol4vr\.keychron-profiles"\)/);
   assert.doesNotMatch(service, /--serial|configureSerial/);
   assert.doesNotMatch(indicators, /configureSerial|defaultKeychronSerial/);
+});
+
+test("Copy on Select uses the reconciler and verified state", () => {
+  assert.match(indicators, /result\.push\("CopyOnSelect"\)/);
+  assert.match(service, /reconcile-copy-on-select/);
+  assert.match(service, /copyOnSelectCommand\("check"\)/);
+  assert.match(service, /"feature-on" : "feature-off"/);
+  assert.match(service, /FileView copyOnSelectConfigWatch/);
+  assert.match(copyOnSelect, /activeText: ""/u);
+  assert.match(copyOnSelect, /inactiveText: ""/u);
+  assert.match(copyOnSelect, /Copy on Select/);
+  assert.match(copyOnSelect, /root\.service\.setCopyOnSelect\(!root\.featureEnabled\)/);
+  assert.doesNotMatch(copyOnSelect, /Process \{|Timer \{/);
 });
 
 test("one directly clickable Gamepad toggle replaces the standalone UI", () => {
